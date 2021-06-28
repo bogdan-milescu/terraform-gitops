@@ -1,0 +1,156 @@
+name: 'Terraform Deploy'
+on:
+  push:
+    paths-ignore:
+      - 'README.md'
+    branches:
+      - master
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  terraform-develop-plan:
+    name: 'Terraform - Develop - Plan'
+    runs-on: ubuntu-latest
+    outputs:
+      has-changed: ${{ steps.plan.outputs.HAS_CHANGED }}
+    env:
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS_DEVELOP }}
+
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v2
+
+      - name: 'Terraform Setup'
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_wrapper: false
+
+      - name: 'Terraform Init - Development'
+        run: terraform init -backend-config=envs/develop.backend.tfvars
+
+      - name: 'Terraform Plan - Development'
+        id: plan
+        run: |
+          terraform plan -var-file=envs/develop.tfvars -out=tfplan
+          changes=$(terraform show -json tfplan | jq -c -r '.resource_changes[].change.actions[]')
+          actions=(
+            "delete"
+            "update"
+            "create"
+          )
+          for action in "${changes[@]}"; do
+            if [[ "${actions[@]}" =~ "${action}" ]]; then
+              echo "::set-output name=HAS_CHANGED::true"
+            fi
+          done
+
+      - name: Upload tfplan
+        uses: actions/upload-artifact@v2
+        with:
+          name: tfplan-develop-${{ github.sha }}
+          path: tfplan
+
+  terraform-develop-apply:
+    name: 'Terraform - Develop - Apply'
+    needs: terraform-develop-plan
+    if: ${{ needs.terraform-develop-plan.outputs.has-changed == 'true' }}
+    environment: develop
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS_DEVELOP }}
+
+    steps:
+      - name: 'Debug output from plan'
+        run: echo ${{ needs.terraform-develop-plan.outputs.has-changed }}
+
+      - name: 'Checkout'
+        uses: actions/checkout@v2
+
+      - name: 'Terraform Setup'
+        uses: hashicorp/setup-terraform@v1
+
+      - name: 'Terraform Init - Development'
+        run: terraform init -backend-config=envs/develop.backend.tfvars
+
+      - name: Download tfplan
+        uses: actions/download-artifact@v2
+        with:
+          name: tfplan-develop-${{ github.sha }}
+
+      - name: 'Terraform Apply - Development'
+        run: terraform apply -auto-approve tfplan
+
+  terraform-prod-plan:
+    name: 'Terraform - Production - Plan'
+    runs-on: ubuntu-latest
+    outputs:
+      has-changed: ${{ steps.plan.outputs.HAS_CHANGED }}
+    env:
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS_PROD }}
+
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v2
+
+      - name: 'Terraform Setup'
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_wrapper: false
+
+      - name: 'Terraform Init - Production'
+        run: terraform init -backend-config=envs/prod.backend.tfvars
+
+      - name: 'Terraform Plan - Production'
+        id: plan
+        run: |
+          terraform plan -var-file=envs/prod.tfvars -out=tfplan
+          changes=$(terraform show -json tfplan | jq -c -r '.resource_changes[].change.actions[]')
+          actions=(
+            "delete"
+            "update"
+            "create"
+          )
+          for action in "${changes[@]}"; do
+            if [[ "${actions[@]}" =~ "${action}" ]]; then
+              echo "::set-output name=HAS_CHANGED::true"
+            fi
+          done
+
+      - name: Upload tfplan
+        uses: actions/upload-artifact@v2
+        with:
+          name: tfplan-prod-${{ github.sha }}
+          path: tfplan
+
+  terraform-prod-apply:
+    name: 'Terraform - Production - Apply'
+    needs: terraform-prod-plan
+    if: ${{ needs.terraform-prod-plan.outputs.has-changed == 'true' }}
+    environment: prod
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS_PROD }}
+
+    steps:
+      - name: 'Debug output from plan'
+        run: echo ${{ needs.terraform-prod-plan.outputs.has-changed }}
+
+      - name: 'Checkout'
+        uses: actions/checkout@v2
+
+      - name: 'Terraform Setup'
+        uses: hashicorp/setup-terraform@v1
+
+      - name: 'Terraform Init - Production'
+        run: terraform init -backend-config=envs/prod.backend.tfvars
+      
+      - name: Download tfplan
+        uses: actions/download-artifact@v2
+        with:
+          name: tfplan-prod-${{ github.sha }}
+
+      - name: 'Terraform Apply - Production'
+        run: terraform apply -auto-approve tfplan

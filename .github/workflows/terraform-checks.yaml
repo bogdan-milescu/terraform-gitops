@@ -1,0 +1,169 @@
+name: 'Terraform Checks'
+on:
+  pull_request:
+    branches:
+      - '!master'
+      - '*'
+    paths-ignore:
+      - 'README.md'
+
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  terraform-check:
+    name: 'Terraform - Check'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v2
+
+      - name: 'Terraform Setup'
+        uses: hashicorp/setup-terraform@v1
+
+      - name: 'Setup TFLint'
+        uses: terraform-linters/setup-tflint@v1
+
+      - name: 'Terraform fmt/TFLint'
+        run: |
+          terraform fmt -check
+          tflint -f compact
+
+  terraform-develop-plan:
+    name: 'Terraform - Develop - Plan'
+    needs: terraform-check
+    runs-on: ubuntu-latest
+    outputs:
+      has-changed: ${{ steps.plan.outputs.HAS_CHANGED }}
+    env:
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS_DEVELOP }}
+
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v2
+
+      - name: 'Terraform Setup'
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_wrapper: false
+
+      - name: 'Terraform Init - Development'
+        run: terraform init -backend-config=envs/develop.backend.tfvars
+
+      - name: 'Terraform Plan - Development'
+        id: plan
+        run: |
+          terraform plan -var-file=envs/develop.tfvars -out=tfplan
+          changes=$(terraform show -json tfplan | jq -c -r '.resource_changes[].change.actions[]')
+          actions=(
+            "delete"
+            "update"
+            "create"
+          )
+          for action in "${changes[@]}"; do
+            if [[ "${actions[@]}" =~ "${action}" ]]; then
+              echo "Changes in development environment:" > updates.txt
+              echo '```' >> updates.txt
+              terraform show -json tfplan | jq -r '.resource_changes[] | select(.change.actions[] != "no-op")' >> updates.txt
+              echo '```' >> updates.txt
+              cat updates.txt
+              echo "::set-output name=HAS_CHANGED::true"
+            fi
+          done
+
+      - name: Upload tfplan diffs
+        if: ${{ steps.plan.outputs.HAS_CHANGED == 'true' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: pr-comment-develop-${{ github.sha }}
+          path: updates.txt
+
+  post-pr-comment-develop:
+    name: 'Post tfstate develop diffs on PR.'
+    needs: terraform-develop-plan
+    if: ${{ needs.terraform-develop-plan.outputs.has-changed == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download tfplan diffs
+        uses: actions/download-artifact@v2
+        with:
+          name: pr-comment-develop-${{ github.sha }}
+
+      - name: Comment PR
+        uses: machine-learning-apps/pr-comment@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path: updates.txt
+
+  terraform-prod-plan:
+    name: 'Terraform - Production - Plan'
+    needs: terraform-check
+    runs-on: ubuntu-latest
+    outputs:
+      has-changed: ${{ steps.plan.outputs.HAS_CHANGED }}
+    env:
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS_PROD }}
+
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v2
+
+      - name: 'Terraform Setup'
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_wrapper: false
+
+      - name: 'Terraform Init - Production'
+        run: terraform init -backend-config=envs/prod.backend.tfvars
+
+      - name: 'Terraform Plan - Production'
+        id: plan
+        run: |
+          terraform plan -var-file=envs/prod.tfvars -out=tfplan
+          changes=$(terraform show -json tfplan | jq -c -r '.resource_changes[].change.actions[]')
+          actions=(
+            "delete"
+            "update"
+            "create"
+          )
+          for action in "${changes[@]}"; do
+            if [[ "${actions[@]}" =~ "${action}" ]]; then
+              echo "Changes in production environment:" > updates.txt
+              echo '```' >> updates.txt
+              terraform show -json tfplan | jq -r '.resource_changes[] | select(.change.actions[] != "no-op")' >> updates.txt
+              echo '```' >> updates.txt
+              cat updates.txt
+              echo "::set-output name=HAS_CHANGED::true"
+            fi
+          done
+
+      - name: Upload tfplan diffs
+        if: ${{ steps.plan.outputs.HAS_CHANGED == 'true' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: pr-comment-prod-${{ github.sha }}
+          path: updates.txt
+
+  post-pr-comment-prod:
+    name: 'Post tfstate production diffs on PR.'
+    needs: terraform-prod-plan
+    if: ${{ needs.terraform-prod-plan.outputs.has-changed == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download tfplan diffs
+        uses: actions/download-artifact@v2
+        with:
+          name: pr-comment-prod-${{ github.sha }}
+
+      - name: Comment PR
+        uses: machine-learning-apps/pr-comment@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path: updates.txt
