@@ -28,7 +28,7 @@ gsutil mb -p BUCKET_NAME gs://BUCKET_NAME
 gsutil versioning set on gs://BUCKET_NAME
 ```
 
-## Pipeline description:
+## Pipelines description:
 
 There are 2 pipelines:
 
