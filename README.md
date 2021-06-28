@@ -29,3 +29,9 @@ gsutil versioning set on gs://BUCKET_NAME
 ```
 
 ## Pipeline description
+
+There are 2 pipelines:
+
+* For the sanity checks like linting and formatting
+
+* For plan & deployment
