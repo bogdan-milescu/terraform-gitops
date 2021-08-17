@@ -19,7 +19,7 @@ This is meant to be a short demonstration of how a multi-environment infrastruct
 
 * Create a bucket in GCP to be used as the backend for Terraform tfstate file.
 ```
-gsutil mb -p BUCKET_NAME gs://BUCKET_NAME
+gsutil mb -p PROJECT_ID gs://BUCKET_NAME
 ```
 
 * Enable versioning on the bucket.
