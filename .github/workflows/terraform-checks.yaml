@@ -89,7 +89,7 @@ jobs:
 
     steps:
       - name: Download tfplan diffs
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4.1.7
         with:
           name: pr-comment-develop-${{ github.sha }}
 
@@ -157,7 +157,7 @@ jobs:
 
     steps:
       - name: Download tfplan diffs
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4.1.7
         with:
           name: pr-comment-prod-${{ github.sha }}
 
